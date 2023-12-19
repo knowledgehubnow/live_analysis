@@ -1,2 +1,2 @@
-/home/manish/Documents/monteage/mont_project/shape_predictor_68_face_landmarks.dat filter=lfs diff=lfs merge=lfs -text
+/home/manish/Documents/monteage_live/new_face_code/shape_predictor_68_face_landmarks.dat filter=lfs diff=lfs merge=lfs -text
 shape_predictor_68_face_landmarks.dat filter=lfs diff=lfs merge=lfs -text
