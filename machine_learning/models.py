@@ -5,15 +5,6 @@ import json
 # Create your models here.
 
 
-class ImageRecognition(models.Model):
-    name = models.CharField(max_length=255, null=True, blank=True)
-    image = models.ImageField(upload_to='images/', blank=True, null=True)
-    image_analysis_data = models.JSONField(null=True, blank=True)
-    dominant_emotion = models.CharField(max_length=255, null=True, blank=True)
-
-    def images_list(self):
-        return ast.literal_eval(self.dominant_emotion)
-
 class VideoRecognition(models.Model):
     name = models.CharField(max_length=255, null=True, blank=True)
     analysis_score = models.FloatField(default=0.0)
@@ -40,14 +31,6 @@ class VideoRecognition(models.Model):
     def __str__(self):
         return self.name
         
-
-class AnalyzePDF(models.Model):
-    pdf_name = models.CharField(max_length=255, null=True, blank=True)
-    pdf_file = models.FileField(upload_to='pdf/', null=True, blank=True)
-    pdf_text = models.TextField()
-
-    def __str__(self):
-        return self.pdf_name
     
 
     

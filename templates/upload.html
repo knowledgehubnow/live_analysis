@@ -12,9 +12,7 @@
             <div class="col-md-6">
                 <div class="text-center">
                     <div class="btn-group mb-5 text-center" role="group" aria-label="Basic mixed styles example">
-                        <a href="{% url 'image_analysis' %}"><button type="button" class="btn btn-danger">Image Recognition</button></a>
-                        <a href="{% url 'analyze_pdf' %}"><button type="button" class="btn btn-secondary">Analyze PDF</button></a>
-                        <a href="{% url 'analized_video_list' %}"><button type="button" class="btn btn-warning">Analyzed Videos List</button></a>
+                        <a href="{% url 'analized_video_list' %}"><button type="button" class="btn btn-info">Analyzed Videos List</button></a>
                     </div>
                 </div>
                 {% if message %}
@@ -27,28 +25,7 @@
                         Analyze Live Video
                     </div>
                     <div class="card-body text-center">
-                        <a href="#"><button type="button" class="btn btn-secondary" onclick="showSpinner()">Click Here For Analyze Live Video</button></a>
-                    </div>
-                </div>
-                <h1 class="text-center">OR</h1>
-                <div class="card">
-                    <div class="card-header text-center fw-bold">
-                        Video Recognition
-                    </div>
-                    <div class="card-body">
-                        <form method="post" enctype="multipart/form-data" action="{% url 'scan_face' %}" onsubmit="showSpinner()">
-                            {% csrf_token %}
-                            <label class="input" for="inputGroupFile01"><span class = "fw-bold">Upload Video*</span></label>
-                            <div class="input-group my-1">
-                                <input type="file" class="form-control" id="inputGroupFile04" name="video" accept="video/*" aria-describedby="inputGroupFileAddon04" aria-label="Upload" required>
-                            </div>
-                            <div> 
-                                <span class="fw-bold">Note:- </span><span class="text-warning">Video size should be less than 10MB and Video duration should be less than 30sec.</span></p>
-                            </div>
-                            <div class="card-body text-center">
-                                <button class="btn btn-primary" type="submit" id="inputGroupFileAddon04">Click Here For Analyze Video</button>
-                            </div>
-                        </form>
+                        <a href="{% url "scan_live_face" %}"><button type="button" class="btn btn-secondary" onclick="showSpinner()">Click Here For Analyze Live Video</button></a>
                     </div>
                 </div>
                 <!-- Spinner -->
