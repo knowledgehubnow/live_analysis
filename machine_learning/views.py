@@ -8,9 +8,7 @@ import subprocess
 from datetime import datetime
 from deepface import DeepFace
 from .models import *
-import ast
 import time
-from pdfminer.high_level import extract_text
 from io import BytesIO
 from pydub import AudioSegment  # Import AudioSegment for voice modulation analysis
 import nltk
@@ -89,7 +87,7 @@ def analyse_video(request):
 
     cap = cv2.VideoCapture(0)
 
-    fps = 16.2
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     frame_size = (width, height)
@@ -467,7 +465,6 @@ def analyse_video(request):
             
     # Getting Total Video Ana;ysis Score ####################
     t_score = get_analysis_score(body_language_score,facial_expression_score,voice_modulation_score,body_confidence_score,language_analysis_score)
-    print(t_score,"hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")
     try:
         # Update the fields with new data
         video_recognition.thumb_img = File(open(thumbnail_filename, 'rb'))
@@ -476,7 +473,7 @@ def analyse_video(request):
         video_recognition.voice_modulation_analysis = voice_modulation
         video_recognition.energy_level_analysis = energy_level
         video_recognition.video_file = File(open(video_file, 'rb'))
-        video_recognition.video_durations = duration
+        video_recognition.video_durations = 0.0
         video_recognition.word_per_minute = speech_rate
         video_recognition.filler_words_used = filler_words
         video_recognition.frequently_used_word = words_list
