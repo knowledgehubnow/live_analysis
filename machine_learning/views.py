@@ -42,6 +42,7 @@ from django.core.files.base import ContentFile
 from PIL import Image
 from django.http import JsonResponse
 from django.urls import reverse
+import uuid
 
 
 mp_pose = mp.solutions.pose
@@ -79,6 +80,52 @@ def calculate_EAR(eye):
 def scan_face(request):
     return render(request,"upload.html")
 
+# Audio recording code start from here **************************************
+
+CHUNK_SIZE = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
+
+# Add a global variable to signal when to stop recording
+stop_recording = False
+# Define a global variable to store audio frames
+audio_frames = []
+
+
+def record_audio():
+    p = pyaudio.PyAudio()
+
+    stream = p.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    input=True,
+                    frames_per_buffer=CHUNK_SIZE)
+
+    print("Recording...")
+
+    frames = []
+    while not stop_recording:
+        data = stream.read(CHUNK_SIZE)
+        frames.append(data)
+
+    print("Finished recording")
+
+    stream.stop_stream()
+    stream.close()
+    p.terminate()
+
+    return frames
+
+def save_audio(frames, output_file):
+    wf = wave.open(output_file, 'wb')
+    wf.setnchannels(CHANNELS)
+    wf.setsampwidth(pyaudio.PyAudio().get_sample_size(FORMAT))
+    wf.setframerate(RATE)
+    wf.writeframes(b''.join(frames))
+    wf.close()
+
+
 def analyse_video(request):
 
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -87,7 +134,8 @@ def analyse_video(request):
 
     cap = cv2.VideoCapture(0)
 
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    fps = 16.2
+    print(f"Webcam FPS: {fps}")
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     frame_size = (width, height)
@@ -102,22 +150,6 @@ def analyse_video(request):
     # Recording Video Frame as video
     recording_video = f"recording_{timestamp}.mp4"
     recording_video_output = cv2.VideoWriter(recording_video, fourcc, fps, frame_size)
-
-    audio_file_path = f"speeches/file_{timestamp}.wav"
-    audio_format = pyaudio.paInt16
-    audio_channels = 1
-    audio_rate = 44100
-    audio_chunk = 1024
-
-    p = pyaudio.PyAudio()
-    stream = p.open(format=audio_format,
-                    channels=audio_channels,
-                    rate=audio_rate,
-                    input=True,
-                    frames_per_buffer=audio_chunk)
-    
-    # Initialize the list to store audio frames
-    audio_frames = []
 
     # Variables 
     blink_thresh = 0.45
@@ -159,8 +191,27 @@ def analyse_video(request):
     # Initialize a dictionary to store emotion counts
     emotion_counts = {emotion: 0 for emotion in emotions}
 
+    try:
+        video_file = f"video_{timestamp}.mp4"
+        print(f"Video file created: {video_file}")
+    except Exception as e:
+        print(f"Error creating video file: {e}")
+
+    thumbnail_filename = f"thumbnail_{timestamp}.jpg"
+
     # Create a VideoRecognition object and associate it with the video_frame
-    video_recognition = VideoRecognition.objects.create(name=str(output_filename))
+    video_recognition = VideoRecognition.objects.create(name=str(video_file))
+
+    OUTPUT_FILE_PATH = f'record_audio_{uuid.uuid4()}.wav'
+    global stop_recording
+    global audio_frames  # Use the global variable to store audio frames
+
+    # Reset global variables
+    stop_recording = False
+    audio_frames = []
+    # Start recording audio in a separate thread
+    audio_thread = threading.Thread(target=lambda: audio_frames.extend(record_audio()))
+    audio_thread.start()
 
     while True:
         # Capture frames.
@@ -172,20 +223,8 @@ def analyse_video(request):
         # Write the frame to the output video.
         recording_video_output.write(image)
 
-        # Specify the output thumbnail filename
-        file = str(output_filename)
-        thumb = file.replace(".mp4", "")
-        thumbnail_filename = f"thumbnail_{thumb}.jpg"
-
         # Save the first frame as a thumbnail image
         cv2.imwrite(thumbnail_filename, image)
-
-
-        # Record audio
-        audio_frame = stream.read(audio_chunk)
-        audio_data = np.frombuffer(audio_frame, dtype=np.int16)
-        # Append the audio frame to the list
-        audio_frames.append(audio_frame)
 
         current_time = frame_count / fps
         print("video duration for every frame",current_time)
@@ -342,70 +381,56 @@ def analyse_video(request):
         cv2.imshow('Video', resized_image)
         # Break the loop if 'q' key is pressed.
         if cv2.waitKey(1) & 0xFF == ord('q'):
+            stop_recording = True
             break
                 
     # Release video capture and writer objects.
     cap.release()
     video_output.release()
+    recording_video_output.release()
     cv2.destroyAllWindows()
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
 
+    # Stop recording audio
+    stop_recording = True
+    audio_thread.join()
 
-    # Optionally, save audio to a file
-    wf = wave.open(audio_file_path, 'wb')
-    wf.setnchannels(audio_channels)
-    wf.setsampwidth(pyaudio.PyAudio().get_sample_size(audio_format))
-    wf.setframerate(audio_rate)
-    wf.writeframes(b''.join(audio_frames))
-    wf.close()
+    r_video = VideoFileClip(recording_video)
+    record  = r_video.duration
+    print(record)
+    # Save the recorded audio
+    save_audio(audio_frames, OUTPUT_FILE_PATH)
+    audio = AudioSegment.from_file(OUTPUT_FILE_PATH, format="wav")
 
-    # Use moviepy to get the video duration
-    # clip = VideoFileClip(recording_video)
-    # duration = clip.duration
-    try:
-        video_file = f"video_{timestamp}" + ".mp4"
-        video_clip = VideoFileClip(recording_video)
-        audio_clip = AudioFileClip(audio_file_path)
-        # Concatenate the video clip with the audio clip
-        final_clip = video_clip.set_audio(audio_clip)
-        # Export the final video with audio
-        final_clip.write_videofile(video_file)
-    except Exception as e:
-        print(e,"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn")
+    # Crop the audio, starting from the 4th second
+    cropped_audio = audio[2000:]  # Exclude the first 4 seconds
 
-    print(video_file)
+    audio_file_path = f"speeches/{OUTPUT_FILE_PATH}"
+    # Save the cropped audio to the same file
+    cropped_audio.export(audio_file_path, format="wav")
 
-    
+    language_sentiment_analysis, voice_modulation_data,energy_category,filler_words,words_list,greeting_words = analyze_language_and_voice(audio_file_path)
+    # Get speech rate
+    wpm = calculate_speech_rate(audio_file_path)
+    speech_rate = round(wpm,2)
+    monotone = voice_monotone(audio_file_path)
+    pauses = detect_voice_pauses(audio_file_path)
+    language_analysis = language_sentiment_analysis["sentiment"]
+    energy_level,energy_score = energy_category
+    voice_modulation = {"pitch":voice_modulation_data["pitch"],"modulation_rating":voice_modulation_data["modulation_rating"]}
 
-    try:
+    if len(greeting_words) > 0:
+        greeting = "Greeting included"
+    else:
+        greeting = None
 
-        # audio_file_path = generate_audio_file(f"{output_filename}")
-        print(audio_file_path)
-        language_sentiment_analysis, voice_modulation_data,energy_category,filler_words,words_list,greeting_words = analyze_language_and_voice(audio_file_path)
-        # Get speech rate
-        wpm = calculate_speech_rate(audio_file_path)
-        speech_rate = round(wpm,2)
-        monotone = voice_monotone(audio_file_path)
-        pauses = detect_voice_pauses(audio_file_path)
-        language_analysis = language_sentiment_analysis["sentiment"]
-        energy_level,energy_score = energy_category
-        voice_modulation = {"pitch":voice_modulation_data["pitch"],"modulation_rating":voice_modulation_data["modulation_rating"]}
+    emo = voice_emotion(audio_file_path)
+    # Convert NumPy array to Python list
+    voice_emo = emo.tolist() if isinstance(emo, np.ndarray) else emo
 
-        if len(greeting_words) > 0:
-            greeting = "Greeting included"
-        else:
-            greeting = None
-
-        emo = voice_emotion(audio_file_path)
-        # Convert NumPy array to Python list
-        voice_emo = emo.tolist() if isinstance(emo, np.ndarray) else emo
-
-    except FileNotFoundError as e:
-        print(f"File not found: {e}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    video_output_file = merge_audio_video(recording_video,audio_file_path)
+    video = VideoFileClip(video_output_file)
+    duration = video.duration
+    print(duration)
             
     # Find the emotion with the maximum count
     most_frequent_emotion = max(emotion_counts, key=emotion_counts.get)
@@ -472,8 +497,8 @@ def analyse_video(request):
         video_recognition.language_analysis = language_analysis
         video_recognition.voice_modulation_analysis = voice_modulation
         video_recognition.energy_level_analysis = energy_level
-        video_recognition.video_file = File(open(video_file, 'rb'))
-        video_recognition.video_durations = 0.0
+        video_recognition.video_file = File(open(video_output_file, 'rb'))
+        video_recognition.video_durations = duration
         video_recognition.word_per_minute = speech_rate
         video_recognition.filler_words_used = filler_words
         video_recognition.frequently_used_word = words_list
@@ -504,12 +529,16 @@ def analyse_video(request):
         pass
 
     try:
-        # os.remove(output_filename)
-        os.remove(video_file)
         os.remove(thumbnail_filename)
-    except:
-        pass
+        os.remove(output_filename)
+        os.remove(recording_video)
+        os.remove(video_output_file)
+        os.remove(OUTPUT_FILE_PATH)
+        os.remove(audio_file_path)
+    except Exception as e:
+        print(e)
     return redirect("analized_video_detail",video_recognition.id)
+
 
 def save_detected_frame(video_recognition_obj, detected_data, image_frame, frame_count,current_time):
     # Convert the frame to a JPEG image
@@ -540,10 +569,11 @@ def save_detected_frame(video_recognition_obj, detected_data, image_frame, frame
 def get_analysis_score(body_language_score,facial_expression_score,voice_modulation_score,body_confidence_score,language_analysis_score):
     try:
         average = (body_language_score + facial_expression_score + voice_modulation_score + body_confidence_score + language_analysis_score)/5
+        return round(average,2)  # Invert the score to get a percentage
     except Exception as e:
         print(e)
+        return None
     
-    return round(average,2)  # Invert the score to get a percentage
 
 
 def eye_blinging(image):
@@ -727,9 +757,15 @@ def analyze_language_and_voice(audio_file_path):
 
     # Analyze voice energy level
     audio = AudioSegment.from_wav(audio_file_path)
+    # Calculate energy level
     energy_level = calculate_energy_level(audio)
+    if not np.isnan(energy_level):
+        energy_level_value = energy_level
+    else:
+        energy_level_value = 0.0
+        
     # Categorize energy level
-    energy_category = categorize_energy_level(energy_level)
+    energy_category = categorize_energy_level(energy_level_value)
     filler_words = analyze_filler_words(transcribed_text)
     # Analyze voice modulation
     voice_modulation = analyze_voice_modulation(audio_file_path)
@@ -958,6 +994,10 @@ def analyze_voice_modulation(audio_file_path):
     
 
 def calculate_energy_level(audio):
+    # Check if the audio data is not empty
+    if not audio.get_array_of_samples():
+        raise ValueError("Audio data is empty")
+
     # Calculate the root mean square (RMS) to estimate energy level
     rms = np.sqrt(np.mean(np.square(audio.get_array_of_samples())))
     
@@ -974,6 +1014,7 @@ def categorize_energy_level(energy_level):
     low_threshold = 0.3
     high_threshold = 0.7
     energy_score = round((energy_level * 100),2)
+    print("enery level score:",energy_score)
     if energy_level < low_threshold:
         return ("Low",energy_score)
     elif low_threshold <= energy_level < high_threshold:
@@ -1115,4 +1156,26 @@ def get_data(request,id):
         "posture":posture
     })
 
+# Audio recording code end **************************************
+from django.core.files import File
+from django.core.files.base import ContentFile
+def merge_audio_video(video_filename, audio_filename):
+    try:
+        # Get the desired video title
+        title = str(uuid.uuid4())
 
+        # Open the video and audio
+        video_clip = VideoFileClip(video_filename)
+        audio_clip = AudioFileClip(audio_filename)
+
+        # Set the audio of the video clip
+        video_clip = video_clip.set_audio(audio_clip)
+
+        # Export the final video with audio
+        output_filename = f"{title}.mp4"
+        video_clip.write_videofile(output_filename, codec='libx264', audio_codec='aac')
+
+        return output_filename
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
