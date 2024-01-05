@@ -35,7 +35,7 @@ class VideoRecognition(models.Model):
     eye_bling = models.CharField(max_length=100,null=True, blank=True)
     hand_movement = models.CharField(max_length=100,null=True, blank=True)
     eye_contact = models.CharField(max_length=100,null=True, blank=True)
-    thanks_gesture = models.CharField(max_length=100,null=True, blank=True)
+    thanks_word = models.CharField(max_length=100,null=True, blank=True)
     greeting = models.CharField(max_length=100,null=True, blank=True)
     greeting_gesture = models.CharField(max_length=100,null=True, blank=True)
     voice_tone = models.CharField(max_length=100,null=True, blank=True)

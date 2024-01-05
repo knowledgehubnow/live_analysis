@@ -144,11 +144,11 @@ def analyse_video(request):
     # Audio setup
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     # Open a video capture object
-    output_filename = f"output_{timestamp}.mp4"
+    output_filename = f"output_video.mp4"
     video_output = cv2.VideoWriter(output_filename, fourcc, fps, frame_size)
 
     # Recording Video Frame as video
-    recording_video = f"recording_{timestamp}.mp4"
+    recording_video = f"recording_video.mp4"
     recording_video_output = cv2.VideoWriter(recording_video, fourcc, fps, frame_size)
 
     # Variables 
@@ -202,7 +202,7 @@ def analyse_video(request):
     # Create a VideoRecognition object and associate it with the video_frame
     video_recognition = VideoRecognition.objects.create(name=str(video_file))
 
-    OUTPUT_FILE_PATH = f'record_audio_{uuid.uuid4()}.wav'
+    OUTPUT_FILE_PATH = f'record_audio.wav'
     global stop_recording
     global audio_frames  # Use the global variable to store audio frames
 
@@ -291,7 +291,6 @@ def analyse_video(request):
         # Hand Movement, Thanks Geesture and body confidence detection code functions *****************
         greeting_gesture = hand_greeting_gesture(frame)
         hand_track = hand_movement(image)
-        thanks_gesture = get_thanks_gesture(image)
         confidence = body_confidence(image)
         # Convert the RGB image to BGR.
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -312,14 +311,6 @@ def analyse_video(request):
         else:
             none_hand_movement_count += 1
             save_detected_frame(video_recognition, "hand_not_moving", image,frame_count,current_time)
-
-        if thanks_gesture is not None:
-            thanks_gesture,x,y = thanks_gesture
-            thanks = "Thanking gesture included"
-            cv2.putText(image, 'Thanks Gesture', (x, y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
-            save_detected_frame(video_recognition, "thanks", image,frame_count,current_time)
-        else:
-            save_detected_frame(video_recognition, "no_thanks", image,frame_count,current_time)
 
         if confidence == "Confident":
             b_confidence = "Confident body posture"
@@ -408,7 +399,7 @@ def analyse_video(request):
     # Save the cropped audio to the same file
     cropped_audio.export(audio_file_path, format="wav")
 
-    language_sentiment_analysis, voice_modulation_data,energy_category,filler_words,words_list,greeting_words = analyze_language_and_voice(audio_file_path)
+    language_sentiment_analysis, voice_modulation_data,energy_category,filler_words,words_list,greeting_words,thanks_words = analyze_language_and_voice(audio_file_path)
     # Get speech rate
     wpm = calculate_speech_rate(audio_file_path)
     speech_rate = round(wpm,2)
@@ -423,11 +414,16 @@ def analyse_video(request):
     else:
         greeting = None
 
+    if len(thanks_words) > 0:
+        thanks = "Thanks included"
+    else:
+        thanks = None
+
     emo = voice_emotion(audio_file_path)
     # Convert NumPy array to Python list
     voice_emo = emo.tolist() if isinstance(emo, np.ndarray) else emo
 
-    video_output_file = merge_audio_video(recording_video,audio_file_path)
+    video_output_file = merge_audio_video(recording_video,audio_file_path,video_file)
     video = VideoFileClip(video_output_file)
     duration = video.duration
     print(duration)
@@ -489,7 +485,7 @@ def analyse_video(request):
         face_detected = "Appropriate Facial Not Detected."
             
     # Getting Total Video Ana;ysis Score ####################
-    t_score = get_analysis_score(body_language_score,facial_expression_score,voice_modulation_score,body_confidence_score,language_analysis_score)
+    t_score = get_analysis_score(body_language_score,facial_expression_score,voice_modulation_score,body_confidence_score,language_analysis_score)    
     try:
         # Update the fields with new data
         video_recognition.thumb_img = File(open(thumbnail_filename, 'rb'))
@@ -507,7 +503,7 @@ def analyse_video(request):
         video_recognition.eye_bling = eye_bling
         video_recognition.hand_movement = hand_move
         video_recognition.eye_contact = eye_contact
-        video_recognition.thanks_gesture = thanks
+        video_recognition.thanks_word = thanks
         video_recognition.greeting = greeting
         video_recognition.greeting_gesture = greet_gesture
         video_recognition.voice_tone = monotone
@@ -663,7 +659,6 @@ def detect_greeting_words(text):
   """
   greeting_words_regex = re.compile(r'(?i)\b(hello|hi|hey|good morning|good afternoon|good evening|how are you|how\'s it going|what\'s up|nice to see you|long time no see|it\'s good to see you again|it\'s a pleasure to meet you|how can I help you|namaskar|namastey|pranam|sat shri akal)\b')
 
-
   greeting_words = []
   for match in greeting_words_regex.finditer(text):
     greeting_words.append(match.group())
@@ -721,23 +716,38 @@ def detect_voice_pauses(audio_file_path):
         return "Pauses seem natural"
     else:
         return "Pauses seem unnatural"
-
-
+    
 
 def voice_emotion(audio_file_path):
-    # Load the model
-    filename = 'modelForPrediction1.sav'
-    loaded_model = pickle.load(open(filename, 'rb'))
+    recognizer = sr.Recognizer()
 
-    # Extract features from the trimmed audio file
-    new_feature = extract_feature(audio_file_path, mfcc=True, chroma=True, mel=True)
+    with sr.AudioFile(audio_file_path) as source:
+        audio_data = recognizer.record(source)
+    
+    try:
+        text = recognizer.recognize_google(audio_data)
+        word_count = len(text.split())
+    except sr.UnknownValueError:
+        word_count = None
 
-    if new_feature is not None:
-        new_feature = new_feature.reshape(1, -1)
-        prediction = loaded_model.predict(new_feature)
-        return prediction
+    if word_count != None:
+        # Load the model
+        filename = 'modelForPrediction1.sav'
+        loaded_model = pickle.load(open(filename, 'rb'))
+
+        # Extract features from the trimmed audio file
+        new_feature = extract_feature(audio_file_path, mfcc=True, chroma=True, mel=True)
+        
+        if new_feature is not None:
+            new_feature = new_feature.reshape(1, -1)
+            prediction = loaded_model.predict(new_feature)
+            return prediction
+        else:
+            print("Error extracting features for prediction.")
+            return None
     else:
-        print("Error extracting features for prediction.")
+        print("No speech detected.")
+        return None
 
 
 
@@ -755,6 +765,9 @@ def analyze_language_and_voice(audio_file_path):
     #Detect Greeting in voice
     greeting_words = detect_greeting_words(transcribed_text)
 
+    thanks_words = detect_thanks_words(transcribed_text)
+
+    #Detect Thanks in voice
     # Analyze voice energy level
     audio = AudioSegment.from_wav(audio_file_path)
     # Calculate energy level
@@ -763,13 +776,13 @@ def analyze_language_and_voice(audio_file_path):
         energy_level_value = energy_level
     else:
         energy_level_value = 0.0
-        
+
     # Categorize energy level
     energy_category = categorize_energy_level(energy_level_value)
     filler_words = analyze_filler_words(transcribed_text)
     # Analyze voice modulation
     voice_modulation = analyze_voice_modulation(audio_file_path)
-    return language_analysis, voice_modulation,energy_category,filler_words,words_list,greeting_words
+    return language_analysis, voice_modulation,energy_category,filler_words,words_list,greeting_words,thanks_words
 
 # Initialize MediaPipe Hands for hand movement detection
 moving_hands = mp.solutions.hands
@@ -803,28 +816,22 @@ def hand_movement(image):
         print(f"Error in hand_movement: {e}")
     return None
 
-def get_thanks_gesture(image):
-    x = 0
-    y = 0
-    hands_results = hands.process(image)
+def detect_thanks_words(text):
+    """Detects the Thanks words "Thanks", "Thankyou","Dhanyavaad","dhanyvad","sukriya","aabhaar","thank you so much","thanks a lot","thanks a ton","many many thanks" ?" in the text.
 
-    # Check if hands are detected
-    if hands_results.multi_hand_landmarks:
-        for hand_landmarks in hands_results.multi_hand_landmarks:
-            thumb_tip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-            index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-            middle_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+    Args:
+        text: The text to search for greeting words in.
 
-            # Define your logic for detecting a "thanks" gesture
-            if thumb_tip.y < index_tip.y and middle_tip.y < index_tip.y:
-                return ('Thanks Gesture', x, y)
+    Returns:
+        A list of greeting words found in the text.
+    """
+    greeting_words_regex = re.compile(r'(?i)\b(thanks|thank you|dhanyavaad|dhanyvad|shukriya|krutagn|kritagya|aabhaar|thank you so much|thanks a lot|thanks a ton|many many thanks)\b')
 
-            # Draw hand landmarks on the image (optional for visualization)
-            mp_draw.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-        return None
-
-    return None
+    greeting_words = []
+    for match in greeting_words_regex.finditer(text):
+        greeting_words.append(match.group())
+    return greeting_words
 
 def hand_greeting_gesture(frame):
     x, y, c = frame.shape
@@ -891,7 +898,11 @@ def get_frequently_used_words(transcribed_text):
 
 def analyze_filler_words(transcribed_text):
     # Define a list of common filler words
-    filler_words = ["um", "uh", "like", "you know", "so","very", "actually", "basically", "literally", "well", "uhm", "uhh", "okay", "right", "I mean", "sort of", "kind of", "definitely", "obviously", "seriously", "totally", "absolutely", "basically", "essentially", "apparently", "apparently", "frankly", "honestly", "clearly", "you see", "mind you", "anyway", "however", "meanwhile", "nevertheless", "otherwise", "somehow", "therefore", "anyhow", "consequently", "furthermore", "otherwise", "moreover"]
+    filler_words = ["are", "yaar", "bas", "haan", "na", "kya", "thik hai", "achaa", "chal", "ab", "to", "haan", "kahin na kahin", "jaise", "isliye", "kuch bhi",
+                "um", "uh", "like", "you know", "so", "very", "actually", "basically", "literally", "well", "uhm", "uhh", "okay", "right", "I mean",
+                "sort of", "kind of", "definitely", "obviously", "seriously", "totally", "absolutely", "basically", "essentially", "apparently", "frankly",
+                "honestly", "clearly", "you see", "mind you", "anyway", "however", "meanwhile", "nevertheless", "otherwise", "somehow", "therefore", "anyhow",
+                "consequently", "furthermore", "otherwise", "moreover"]
 
     # Convert text to lowercase for case-insensitive matching
     transcribed_text_lower = transcribed_text.lower()
@@ -942,9 +953,6 @@ def voice_monotone(audio_file_path):
     # Calculate the root mean square (RMS) of the audio signal
     rms = np.sqrt(np.mean(np.square(samples)))
 
-    # Print the RMS value for reference
-    # print("RMS:", rms)
-
     # Set a threshold for determining monotone or clear voice
     min_threshold = 20  # Adjust this threshold based on your observations
     max_threshold = 50
@@ -959,7 +967,6 @@ def analyze_voice_modulation(audio_file_path):
     audio = AudioSegment.from_wav(audio_file_path)
 
     # Perform voice modulation analysis (add your logic here)
-
     pitch = audio.dBFS
 
     # Check if pitch is -inf and handle it
@@ -987,7 +994,7 @@ def analyze_voice_modulation(audio_file_path):
         modulation_rating = "Not Available"
 
     return {
-        "pitch": round(pitch,2),  # Pitch in dB
+        "pitch": 0.0,  # Pitch in dB
         "percentage_modulation": round(percentage_modulation, 2),
         "modulation_rating": modulation_rating
     }
@@ -1159,7 +1166,7 @@ def get_data(request,id):
 # Audio recording code end **************************************
 from django.core.files import File
 from django.core.files.base import ContentFile
-def merge_audio_video(video_filename, audio_filename):
+def merge_audio_video(video_filename, audio_filename,video_file):
     try:
         # Get the desired video title
         title = str(uuid.uuid4())
@@ -1171,11 +1178,9 @@ def merge_audio_video(video_filename, audio_filename):
         # Set the audio of the video clip
         video_clip = video_clip.set_audio(audio_clip)
 
-        # Export the final video with audio
-        output_filename = f"{title}.mp4"
-        video_clip.write_videofile(output_filename, codec='libx264', audio_codec='aac')
+        video_clip.write_videofile(video_file, codec='libx264', audio_codec='aac')
 
-        return output_filename
+        return video_file
     except Exception as e:
         print(f"Error: {e}")
         return None

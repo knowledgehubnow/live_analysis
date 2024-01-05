@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% load static %}
 <html>
 <head>
     <meta charset="UTF-8">
@@ -14,10 +15,14 @@
         <div class="card my-3" style="max-width: 100%;">
             <div class="row g-4">
               <div class="col-md-4 col-sm-12">
-                    <video width="320" height="240" controls>
+                {% if video_data.video_file %}
+                    <video class="card-img-top" width="100%" height="200" controls>
                         <source src="{{ video_data.video_file.url }}" type="video/mp4">
                         Your browser does not support the video tag.
                     </video>
+                {% else %}
+                    <img src="{% static "images/video_unavailable.jpg" %}" alt="Image" height="200" width="100%">
+                {% endif %}
               </div>
               <div class="col-md-4 col-sm-12">
                 <div class="card-body">
@@ -57,9 +62,13 @@
                     </p>
                     <p class="card-text">
                         <span class="fw-bold">Voice Emotion:</span> 
-                        {% for emo in video_data.voice_emotion %}
-                            <span class="badge bg-success">{{ emo }} </span>
-                        {% endfor %}
+                        {% if video_data.voice_emotion %}
+                            {% for emo in video_data.voice_emotion %}
+                                <span class="badge bg-success">{{ emo }} </span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="badge bg-danger">Voice emotion not detected</span>
+                        {% endif %}
                     </p>
                     <p class="card-text">
                         <span class="fw-bold">Facial Expression:</span> 
@@ -103,11 +112,11 @@
                     {% endif %}
                 </p>
                 <p class="card-text">
-                    <span class="fw-bold">Thanks Gesture:</span> 
-                    {% if video_data.thanks_gesture != None %}
-                    <span class="badge bg-success">{{ video_data.thanks_gesture }} </span>
+                    <span class="fw-bold">Thanks:</span> 
+                    {% if video_data.thanks_word != None %}
+                    <span class="badge bg-success">{{ video_data.thanks_word }} </span>
                     {% else %}
-                    <span class="badge bg-danger">Thanking gesture is not included </span>
+                    <span class="badge bg-danger">Thanking is not included </span>
                     {% endif %}
                 </p>
                 <p class="card-text">
