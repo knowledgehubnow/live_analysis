@@ -4,21 +4,15 @@ import json
 from django.core.serializers import serialize
 import numpy as np
 import speech_recognition as sr
-import subprocess
 from datetime import datetime
-from deepface import DeepFace
 from .models import *
 import time
 from io import BytesIO
 from pydub import AudioSegment  # Import AudioSegment for voice modulation analysis
-import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer  # Import SentimentIntensityAnalyzer for sentiment analysis
 import mediapipe as mp
-from math import degrees, acos
 from nltk.probability import FreqDist
 from nltk.tokenize import word_tokenize
-import librosa
-from tensorflow import keras
 import dlib
 import tensorflow as tf
 import imutils 
@@ -31,7 +25,6 @@ from voice_emotion import extract_feature
 import re
 from tensorflow.keras.models import load_model
 from pydub.silence import split_on_silence
-import math as m
 from .body_posture_detection import body_posture as detect_body_posture
 from moviepy.editor import VideoFileClip, AudioFileClip
 import pyaudio
@@ -43,6 +36,7 @@ from PIL import Image
 from django.http import JsonResponse
 from django.urls import reverse
 import uuid
+from deep_translator import GoogleTranslator
 
 
 mp_pose = mp.solutions.pose
@@ -78,7 +72,13 @@ def calculate_EAR(eye):
     return EAR 
 
 def scan_face(request):
-    return render(request,"upload.html")
+    if request.method == "POST":
+        print(request.POST)
+        lang_id = request.POST.get("language")
+        print(lang_id)
+        return redirect("analyse_video",lang_id)
+    return render(request, "upload.html")
+
 
 # Audio recording code start from here **************************************
 
@@ -126,7 +126,7 @@ def save_audio(frames, output_file):
     wf.close()
 
 
-def analyse_video(request):
+def analyse_video(request,lang_id):
 
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
     eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
@@ -385,11 +385,9 @@ def analyse_video(request):
     stop_recording = True
     audio_thread.join()
 
-    r_video = VideoFileClip(recording_video)
-    record  = r_video.duration
-    print(record)
     # Save the recorded audio
     save_audio(audio_frames, OUTPUT_FILE_PATH)
+
     audio = AudioSegment.from_file(OUTPUT_FILE_PATH, format="wav")
 
     # Crop the audio, starting from the 4th second
@@ -399,15 +397,34 @@ def analyse_video(request):
     # Save the cropped audio to the same file
     cropped_audio.export(audio_file_path, format="wav")
 
-    language_sentiment_analysis, voice_modulation_data,energy_category,filler_words,words_list,greeting_words,thanks_words = analyze_language_and_voice(audio_file_path)
+    voice_text = transcribe_audio(audio_file_path,lang_id)
+    print(voice_text)
+    words_list,greeting_words,thanks_words,filler_words,language_sentiment_analysis = detect_voice_words(voice_text)
+
+    voice_modulation_data,energy_category = analyze_language_and_voice(audio_file_path)
+    energy_level,energy_score = energy_category
+
     # Get speech rate
     wpm = calculate_speech_rate(audio_file_path)
     speech_rate = round(wpm,2)
-    monotone = voice_monotone(audio_file_path)
-    pauses = detect_voice_pauses(audio_file_path)
-    language_analysis = language_sentiment_analysis["sentiment"]
-    energy_level,energy_score = energy_category
-    voice_modulation = {"pitch":voice_modulation_data["pitch"],"modulation_rating":voice_modulation_data["modulation_rating"]}
+    if speech_rate > 0:
+        monotone = voice_monotone(audio_file_path)
+        pauses = detect_voice_pauses(audio_file_path)
+        voice_modulation = {"pitch":voice_modulation_data["pitch"],"modulation_rating":voice_modulation_data["modulation_rating"]}
+        language_analysis = language_sentiment_analysis["sentiment"]
+        energy_level,energy_score = energy_category
+        voice_modulation_percentage = voice_modulation_data["percentage_modulation"]
+        lang_sentimet_avg = language_sentiment_analysis["sentiment_score_average"]
+    else:
+        monotone = None
+        pauses = None
+        voice_modulation = {"pitch":None,"modulation_rating":None}
+        language_analysis = None
+        energy_level = None
+        energy_score = 0.0
+        voice_modulation_percentage = 0.0
+        lang_sentimet_avg = 0.0
+
 
     if len(greeting_words) > 0:
         greeting = "Greeting included"
@@ -462,10 +479,10 @@ def analyse_video(request):
     facial_expression_score = round(facial_expression_ratio,2)
 
     if not filler_words:
-        language_analysis_score = language_sentiment_analysis["sentiment_score_average"] * 100
+        language_analysis_score = lang_sentimet_avg * 100
         language_analysis_average = 0.0
     else:
-        language_analysis_average = ((language_sentiment_analysis["sentiment_score_average"] + 1.0) / 2) * 100  # 1.0 is added for filler words average to get percentage
+        language_analysis_average = ((lang_sentimet_avg + 1.0) / 2) * 100  # 1.0 is added for filler words average to get percentage
         language_analysis_score = round(language_analysis_average, 2)
 
     if body_confidence_count > 0:
@@ -475,7 +492,7 @@ def analyse_video(request):
             
     body_confidence_score = round((confidence_ratio * 100),2)
 
-    voice_modulation_score = round((energy_score + voice_modulation_data["percentage_modulation"])/2,2)
+    voice_modulation_score = round((energy_score + voice_modulation_percentage)/2,2)
 
     total_len = total_detected_time + total_not_detected_time
     ratio = total_detected_time/total_len
@@ -512,7 +529,7 @@ def analyse_video(request):
         video_recognition.body_posture = body_posture
         video_recognition.body_language_score = body_language_score
         video_recognition.facial_expression_score = facial_expression_score
-        video_recognition.language_analysis_score = language_analysis_score
+        video_recognition.language_analysis_score = round(language_analysis_score,2)
         video_recognition.voice_modulation_score = voice_modulation_score
         video_recognition.body_confidence_score = body_confidence_score
         video_recognition.facial_expression = most_frequent_emotion
@@ -557,14 +574,13 @@ def save_detected_frame(video_recognition_obj, detected_data, image_frame, frame
 
     except Exception as e:
         print(f"Error: {e}")
-        return
-
-  
+        return 
 
 
 def get_analysis_score(body_language_score,facial_expression_score,voice_modulation_score,body_confidence_score,language_analysis_score):
     try:
-        average = (body_language_score + facial_expression_score + voice_modulation_score + body_confidence_score + language_analysis_score)/5
+        average_data = [body_language_score,facial_expression_score,voice_modulation_score,body_confidence_score,language_analysis_score]
+        average = np.mean(average_data)
         return round(average,2)  # Invert the score to get a percentage
     except Exception as e:
         print(e)
@@ -649,20 +665,19 @@ def smile_detection(image, face_cascade, smile_cascade):
 
 
 def detect_greeting_words(text):
-  """Detects the greeting words "Hello", "Hi", "Hey", "Good morning", "Good afternoon", "Good evening", "How are you?", "How's it going?", "What's up?", "Nice to see you", "Long time no see", "It's good to see you again", "It's a pleasure to meet you", and "How can I help you?" in the text.
+    """Detects the greeting words "Hello", "Hi", "Hey", "Good morning", "Good afternoon", "Good evening", "How are you?", "How's it going?", "What's up?", "Nice to see you", "Long time no see", "It's good to see you again", "It's a pleasure to meet you", and "How can I help you?" in the text.
+    Args:
+        text: The text to search for greeting words in.
 
-  Args:
-    text: The text to search for greeting words in.
+    Returns:
+        A list of greeting words found in the text.
+    """
+    greeting_words_regex = re.compile(r'(?i)\b(hello|hi|hey|good morning|good afternoon|good evening|how are you|how\'s it going|what\'s up|nice to see you|long time no see|it\'s good to see you again|it\'s a pleasure to meet you|how can I help you|नमस्कार|नमस्ते|प्रणाम|सत श्री अकाल)\b')
 
-  Returns:
-    A list of greeting words found in the text.
-  """
-  greeting_words_regex = re.compile(r'(?i)\b(hello|hi|hey|good morning|good afternoon|good evening|how are you|how\'s it going|what\'s up|nice to see you|long time no see|it\'s good to see you again|it\'s a pleasure to meet you|how can I help you|namaskar|namastey|pranam|sat shri akal)\b')
-
-  greeting_words = []
-  for match in greeting_words_regex.finditer(text):
-    greeting_words.append(match.group())
-  return greeting_words
+    greeting_words = []
+    for match in greeting_words_regex.finditer(text):
+        greeting_words.append(match.group())
+    return greeting_words
 
 # load trained model for emotion detection
 emotion_model = load_model("best_model.h5")
@@ -750,24 +765,23 @@ def voice_emotion(audio_file_path):
         return None
 
 
-
-def analyze_language_and_voice(audio_file_path):
-    # Transcribe spoken words
-    transcribed_text = transcribe_audio(audio_file_path)
+def detect_voice_words(transcribed_text):
     frequently_used_words = get_frequently_used_words(transcribed_text)
     words_list = []
     for word, frequency in frequently_used_words:
         words_list.append(word)
-
-    # Analyze language characteristics (e.g., sentiment)
-    language_analysis = analyze_language(transcribed_text)
-
-    #Detect Greeting in voice
+    
+        #Detect Greeting in voice
     greeting_words = detect_greeting_words(transcribed_text)
 
     thanks_words = detect_thanks_words(transcribed_text)
 
-    #Detect Thanks in voice
+    filler_words = analyze_filler_words(transcribed_text)
+    language_analysis = analyze_language(transcribed_text)
+
+    return words_list,greeting_words,thanks_words,filler_words,language_analysis
+
+def analyze_language_and_voice(audio_file_path):
     # Analyze voice energy level
     audio = AudioSegment.from_wav(audio_file_path)
     # Calculate energy level
@@ -779,10 +793,11 @@ def analyze_language_and_voice(audio_file_path):
 
     # Categorize energy level
     energy_category = categorize_energy_level(energy_level_value)
-    filler_words = analyze_filler_words(transcribed_text)
     # Analyze voice modulation
     voice_modulation = analyze_voice_modulation(audio_file_path)
-    return language_analysis, voice_modulation,energy_category,filler_words,words_list,greeting_words,thanks_words
+
+    return voice_modulation,energy_category
+
 
 # Initialize MediaPipe Hands for hand movement detection
 moving_hands = mp.solutions.hands
@@ -825,13 +840,13 @@ def detect_thanks_words(text):
     Returns:
         A list of greeting words found in the text.
     """
-    greeting_words_regex = re.compile(r'(?i)\b(thanks|thank you|dhanyavaad|dhanyvad|shukriya|krutagn|kritagya|aabhaar|thank you so much|thanks a lot|thanks a ton|many many thanks)\b')
+    thanks_words_regex = re.compile(r'(?i)\b(thanks|thank you|thank you so much|thanks a lot|thanks a ton|many many thanks|धन्यवाद|धन्यवाद आपका|शुक्रिया|कृतज्ञ|कृतज्ञता|आभार|आपका बहुत आभार|धन्यवाद बहुत बहुत|बहुत शुक्रिया)\b')
 
 
-    greeting_words = []
-    for match in greeting_words_regex.finditer(text):
-        greeting_words.append(match.group())
-    return greeting_words
+    thanks_words = []
+    for match in thanks_words_regex.finditer(text):
+        thanks_words.append(match.group())
+    return thanks_words
 
 def hand_greeting_gesture(frame):
     x, y, c = frame.shape
@@ -898,39 +913,51 @@ def get_frequently_used_words(transcribed_text):
 
 def analyze_filler_words(transcribed_text):
     # Define a list of common filler words
-    filler_words = ["are", "yaar", "bas", "haan", "na", "kya", "thik hai", "achaa", "chal", "ab", "to", "haan", "kahin na kahin", "jaise", "isliye", "kuch bhi",
-                "um", "uh", "like", "you know", "so", "very", "actually", "basically", "literally", "well", "uhm", "uhh", "okay", "right", "I mean",
-                "sort of", "kind of", "definitely", "obviously", "seriously", "totally", "absolutely", "basically", "essentially", "apparently", "frankly",
-                "honestly", "clearly", "you see", "mind you", "anyway", "however", "meanwhile", "nevertheless", "otherwise", "somehow", "therefore", "anyhow",
-                "consequently", "furthermore", "otherwise", "moreover"]
+    filler_words = [
+        "um", "uh", "like", "you know", "so", "very", "actually", "basically", "literally", "well", "uhm", "uhh", "okay", "right", "I mean",
+        "sort of", "kind of", "definitely", "obviously", "seriously", "totally", "absolutely", "basically", "essentially", "apparently", "frankly",
+        "honestly", "clearly", "you see", "mind you", "anyway", "however", "meanwhile", "nevertheless", "otherwise", "somehow", "therefore", "anyhow",
+        "consequently", "furthermore", "otherwise", "moreover",
+        "अरे", "हाँ", "नहीं", "बस", "यहाँ", "वहाँ", "कहीं", "क्या", "कहाँ", "कब", "कैसे", "क्यों", "हो", "जी", "ठीक", "अब", "बहुत", "ठोड़ा", "ज्यादा",
+        "सच", "जूठ", "वाकई", "बिलकुल", "आपका", "मेरा"
+    ]
 
     # Convert text to lowercase for case-insensitive matching
     transcribed_text_lower = transcribed_text.lower()
-
     used_filler_words = list(set(word for word in filler_words if word in transcribed_text_lower))
-
     return used_filler_words
 
-def transcribe_audio(audio_file_path):
+def transcribe_audio(audio_file_path,lang_id):
     recognizer = sr.Recognizer()
 
     with sr.AudioFile(audio_file_path) as source:
         audio_data = recognizer.record(source)
 
     try:
-        transcribed_text = recognizer.recognize_google(audio_data)
+        if lang_id == 2:
+            transcribed_text = recognizer.recognize_google(audio_data)
+        else:
+            transcribed_text = recognizer.recognize_google(audio_data,language='hi-IN')
         return transcribed_text
     except sr.UnknownValueError:
         return "Transcription could not be performed"
 
 def analyze_language(text):
+    # Split the text into chunks of 5000 characters or fewer
+    chunk_size = 5000
+    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
+    # Translate each chunk and concatenate the results
+    translated_chunks = [GoogleTranslator(source='auto', target='en').translate(chunk) for chunk in chunks]
+    translated_text = '\n'.join(translated_chunks)
+    print(translated_text)
+
     # Initialize the SentimentIntensityAnalyzer
     sid = SentimentIntensityAnalyzer()
 
     # Get sentiment scores
-    sentiment_scores = sid.polarity_scores(text)
+    sentiment_scores = sid.polarity_scores(translated_text)
     sentiment_score_average = (sentiment_scores['compound'] + 1) / 2
-
 
     # Determine sentiment based on the compound score
     if sentiment_scores['compound'] >= 0.05:
@@ -994,7 +1021,7 @@ def analyze_voice_modulation(audio_file_path):
         modulation_rating = "Not Available"
 
     return {
-        "pitch": 0.0,  # Pitch in dB
+        "pitch": round(pitch,2),  # Pitch in dB
         "percentage_modulation": round(percentage_modulation, 2),
         "modulation_rating": modulation_rating
     }
@@ -1029,23 +1056,6 @@ def categorize_energy_level(energy_level):
     else:
         return ("High",energy_score)
 
-def generate_audio_file(video_path):
-    # Speech recognition setup
-    recognizer = sr.Recognizer()
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    audio_file_path = f"speeches/file_{timestamp}.wav"  # Use a timestamp to create a unique audio file name
-
-    # Use ffmpeg to extract audio from the video
-    ffmpeg_path = "/usr/bin/ffmpeg"  # Replace with the actual path
-    video_to_audio_command = [ffmpeg_path, "-i", video_path, "-ab", "160k", "-ac", "2", "-ar", "44100", "-vn", audio_file_path]
-
-    try:
-        subprocess.run(video_to_audio_command, check=True)
-        print("Audio file generated successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"Error: {e}")
-    
-    return audio_file_path
 
 def calculate_speech_rate(audio_file_path):
     recognizer = sr.Recognizer()
@@ -1109,10 +1119,6 @@ def delete_data(request):
 
 def video_detail(request,video_id):
     video = VideoRecognition.objects.get(id=video_id)
-    if request.method == "POST":
-        posture_name = request.POST.get("posture")
-        posture = Posture.objects.filter(video=video,name = posture_name)
-
     return render(request,"detail.html",{
         "video_data":video
     })

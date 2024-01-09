@@ -45,10 +45,16 @@
                 <div class="row">                  
                     <div class="col-6">
                         <div class="card-body">
-                            <p class="card-text"><span class="fw-bold">Speech Rate:</span> <span class="badge bg-success">{{ video_data.word_per_minute }} </span>words/min.</p>
+                            <p class="card-text"><span class="fw-bold">Speech Rate:</span> <span class="badge bg-success">{{ video_data.word_per_minute }} </span>&nbsp;words/min.</p>
+                            {% if video_data.word_per_minute > 0 %}
                             <p class="card-text"><span class="fw-bold">Language Analysis:</span> <span class="badge bg-success">{{ video_data.language_analysis}} </span></p>
                             <p class="card-text"><span class="fw-bold">Voice Modulation Analysis:</span> <span class="badge bg-success">{{ video_data.voice_modulation_analysis.modulation_rating }} </span></p>
                             <p class="card-text"><span class="fw-bold">Energy Level Analysis:</span> <span class="badge bg-success">{{ video_data.energy_level_analysis }} </span></p>
+                            {% else %}
+                            <p class="card-text"><span class="fw-bold">Language Analysis:</span> <span class="badge bg-danger">{{ video_data.language_analysis}} </span></p>
+                            <p class="card-text"><span class="fw-bold">Voice Modulation Analysis:</span> <span class="badge bg-danger">{{ video_data.voice_modulation_analysis.modulation_rating }} </span></p>
+                            <p class="card-text"><span class="fw-bold">Energy Level Analysis:</span> <span class="badge bg-danger">{{ video_data.energy_level_analysis }} </span></p>
+                            {% endif %}
                             <p class="card-text">
                                 <span class="fw-bold">Filler Words:</span> 
                                 {% for filler_word in video_data.filler_words_used %}
@@ -95,6 +101,14 @@
                                 <span class="badge bg-danger">Greeting not included </span>
                                 {% endif %}
                             </p>
+                            <p class="card-text">
+                                <span class="fw-bold">Thanks:</span> 
+                                {% if video_data.thanks_word != None %}
+                                <span class="badge bg-success posture" data-posture-name="thanks">{{ video_data.thanks_word }} </span>
+                                {% else %}
+                                <span class="badge bg-danger posture" data-posture-name="no_thanks">Thanking is not included </span>
+                                {% endif %}
+                            </p>
 
                             
                         </div>
@@ -130,14 +144,6 @@
                             <span class="badge bg-success posture" data-posture-name="confident">{{ video_data.confidence }} </span>
                             {% else %}
                             <span class="badge bg-danger posture" data-posture-name="unconfident">Not confident body posture </span>
-                            {% endif %}
-                        </p>
-                        <p class="card-text">
-                            <span class="fw-bold">Thanks:</span> 
-                            {% if video_data.thanks_word != None %}
-                            <span class="badge bg-success posture" data-posture-name="thanks">{{ video_data.thanks_word }} </span>
-                            {% else %}
-                            <span class="badge bg-danger posture" data-posture-name="no_thanks">Thanking is not included </span>
                             {% endif %}
                         </p>
                         

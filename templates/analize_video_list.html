@@ -49,10 +49,16 @@
                         <p class="card-text"><span class="fw-bold">Language Analysis Score:</span> <span class="badge bg-success">{{ data.language_analysis_score }} %</span></p>
                         <p class="card-text"><span class="fw-bold">Voice modulation score:</span> <span class="badge bg-success">{{ data.voice_modulation_score }} %</span></p>
                         <p class="card-text"><span class="fw-bold">Body confidence score:</span> <span class="badge bg-success">{{ data.body_confidence_score }} %</span></p>
-                        <p class="card-text"><span class="fw-bold">Speech Rate:</span> <span class="badge bg-success">{{ data.word_per_minute }} </span>words/min.</p>
-                        <p class="card-text"><span class="fw-bold">Language Analysis:</span> <span class="badge bg-success">{{ data.language_analysis }} </span></p>
+                        <p class="card-text"><span class="fw-bold">Speech Rate:</span> <span class="badge bg-success">{{ data.word_per_minute }} </span>&nbsp;words/min.</p>
+                        {% if data.word_per_minute > 0 %}
+                        <p class="card-text"><span class="fw-bold">Language Analysis:</span> <span class="badge bg-success">{{ data.language_analysis}} </span></p>
                         <p class="card-text"><span class="fw-bold">Voice Modulation Analysis:</span> <span class="badge bg-success">{{ data.voice_modulation_analysis.modulation_rating }} </span></p>
                         <p class="card-text"><span class="fw-bold">Energy Level Analysis:</span> <span class="badge bg-success">{{ data.energy_level_analysis }} </span></p>
+                        {% else %}
+                        <p class="card-text"><span class="fw-bold">Language Analysis:</span> <span class="badge bg-danger">{{ data.language_analysis}} </span></p>
+                        <p class="card-text"><span class="fw-bold">Voice Modulation Analysis:</span> <span class="badge bg-danger">{{ data.voice_modulation_analysis.modulation_rating }} </span></p>
+                        <p class="card-text"><span class="fw-bold">Energy Level Analysis:</span> <span class="badge bg-danger">{{ data.energy_level_analysis }} </span></p>
+                        {% endif %}
                         <p class="card-text">
                             <span class="fw-bold">Filler Words:</span> 
                             {% for filler_word in data.filler_words_used %}
