@@ -85,8 +85,8 @@
                             </p>
                             <p class="card-text">
                                 <span class="fw-bold">Voice Emotion:</span> 
-                                {% if data.voice_emotion %}
-                                    {% for emo in data.voice_emotion %}
+                                {% if video_data.voice_emotion %}
+                                    {% for emo in video_data.voice_emotion %}
                                         <span class="badge bg-success">{{ emo }} </span>
                                     {% endfor %}
                                 {% else %}
